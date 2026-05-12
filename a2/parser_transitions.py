@@ -32,8 +32,9 @@ class PartialParse(object):
         ### Note: The root token should be represented with the string "ROOT"
         ### Note: If you need to use the sentence object to initialize anything, make sure to not directly 
         ###       reference the sentence object.  That is, remember to NOT modify the sentence object. 
-
-
+        self.stack = ['ROOT']
+        self.buffer = [word for word in sentence]
+        self.dependencies = []
         ### END YOUR CODE
 
 
@@ -51,8 +52,15 @@ class PartialParse(object):
         ###         1. Shift
         ###         2. Left Arc
         ###         3. Right Arc
-
-
+        if transition == 'S':
+            new_word = self.buffer.pop(0)
+            self.stack.append(new_word)
+        if transition == 'LA':
+            self.dependencies.append((self.stack[-1], self.stack[-2]))
+            self.stack.pop(-2)
+        if transition == 'RA':
+            self.dependencies.append((self.stack[-2], self.stack[-1]))
+            self.stack.pop()
         ### END YOUR CODE
 
     def parse(self, transitions):
@@ -102,8 +110,20 @@ def minibatch_parse(sentences, model, batch_size):
     ###             contains references to the same objects. Thus, you should NOT use the `del` operator
     ###             to remove objects from the `unfinished_parses` list. This will free the underlying memory that
     ###             is being accessed by `partial_parses` and may cause your code to crash.
-
-
+    partial_parses = [PartialParse(sentence) for sentence in sentences]
+    unfinished_parses = [partial_parse for partial_parse in partial_parses]
+    while len(unfinished_parses)!=0:
+        current_batch_size = min(batch_size, len(unfinished_parses))
+        batch = unfinished_parses[:current_batch_size]
+        prediction = model.predict(batch)
+        remove_idx = []
+        for i in range(current_batch_size):
+            unfinished_parses[i].parse_step(prediction[i])
+            if len(unfinished_parses[i].buffer)==0 and len(unfinished_parses[i].stack)==1:
+                remove_idx.append(i)
+        remain_idx = [id for id in range(len(unfinished_parses)) if id not in remove_idx]
+        unfinished_parses = [unfinished_parses[i] for i in remain_idx]
+    dependencies = [partial_parse.dependencies for partial_parse in partial_parses]
     ### END YOUR CODE
 
     return dependencies
