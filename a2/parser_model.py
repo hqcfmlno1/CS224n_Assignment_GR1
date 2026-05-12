@@ -44,8 +44,8 @@ class ParserModel(nn.Module):
         self.n_features = n_features
         self.n_classes = n_classes
         self.dropout_prob = dropout_prob
-        self.embed_size = embeddings.shape[1]
-        self.hidden_size = hidden_size
+        self.embed_size = embeddings.shape[1]   # dim của 1 embedding
+        self.hidden_size = hidden_size          # out features của ma trận W
         self.embeddings = nn.Parameter(torch.tensor(embeddings))
 
         ### YOUR CODE HERE (~9-10 Lines)
@@ -72,10 +72,15 @@ class ParserModel(nn.Module):
         ###     Dropout: https://pytorch.org/docs/stable/nn.html#dropout-layers
         ### 
         ### See the PDF for hints.
-
-
-
-
+        self.embed_to_hidden_weight = nn.Parameter(torch.empty(self.n_features*self.embed_size, self.hidden_size))
+        self.embed_to_hidden_bias = nn.Parameter(torch.empty(1, self.hidden_size))
+        nn.init.xavier_uniform_(self.embed_to_hidden_weight)
+        nn.init.uniform_(self.embed_to_hidden_bias)
+        self.dropout = nn.Dropout(self.dropout_prob)
+        self.hidden_to_logits_weight = nn.Parameter(torch.empty(self.hidden_size, self.n_classes))
+        self.hidden_to_logits_bias = nn.Parameter(torch.empty(1, self.n_classes))
+        nn.init.xavier_uniform_(self.hidden_to_logits_weight)
+        nn.init.uniform_(self.hidden_to_logits_bias)
         ### END YOUR CODE
 
     def embedding_lookup(self, w):
@@ -106,9 +111,15 @@ class ParserModel(nn.Module):
         ###     Gather: https://pytorch.org/docs/stable/torch.html#torch.gather
         ###     View: https://pytorch.org/docs/stable/tensors.html#torch.Tensor.view
         ###     Flatten: https://pytorch.org/docs/stable/generated/torch.flatten.html
-        x = None
-
-
+        x = torch.empty(w.shape[0], w.shape[1], self.embed_size)
+        for chunk in w:
+            i = 0
+            tmp = torch.empty(w.shape[1], self.embed_size)
+            for j in range(len(chunk)):
+                tmp[j] = self.embeddings[chunk[j]]
+            x[i] = tmp
+            i+=1
+        x = x.reshape(w.shape[0], -1)
         ### END YOUR CODE
         return x
 
@@ -143,8 +154,12 @@ class ParserModel(nn.Module):
         ### Please see the following docs for support:
         ###     Matrix product: https://pytorch.org/docs/stable/torch.html#torch.matmul
         ###     ReLU: https://pytorch.org/docs/stable/nn.html?highlight=relu#torch.nn.functional.relu
-        logits = None
-
+        w = self.embedding_lookup(w)
+        w = torch.matmul(w, self.embed_to_hidden_weight) + self.embed_to_hidden_bias
+        w = nn.ReLU()(w)
+        w = self.dropout(w)
+        w = torch.matmul(w, self.hidden_to_logits_weight) + self.hidden_to_logits_bias
+        logits = w
         ### END YOUR CODE
         return logits
 
