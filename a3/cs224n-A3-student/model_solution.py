@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from einops import rearrange
 from transformers import GPT2LMHeadModel
 import huggingface_hub
-
+import numpy as np
 from utils import state_dict_converter
 
 
@@ -47,7 +47,8 @@ class CausalAttention(nn.Module):
         self.W_v = nn.Linear(config.d_model, self.d_attention * config.n_heads)
 
         self.W_o = nn.Linear(self.d_attention * config.n_heads, config.d_model)
-
+        self.head_num = config.n_heads
+        self.d_model = config.d_model
         # Causal mask
         self.register_buffer(
             "causal_mask",
@@ -62,7 +63,24 @@ class CausalAttention(nn.Module):
     ) -> Float[Tensor, "batch seq_len d_model"]:
 
         # TODO, complete 
-        return torch.empty(1)
+        K = self.W_k(x)
+        Q = self.W_q(x)
+        V = self.W_v(x)
+        K = K.reshape(x.shape[0], x.shape[1], self.head_num, self.d_attention)
+        K = K.transpose(1,2)
+        Q = Q.reshape(x.shape[0], x.shape[1], self.head_num, self.d_attention)
+        Q = Q.transpose(1,2)
+        V = V.reshape(x.shape[0], x.shape[1], self.head_num, self.d_attention)
+        V = V.transpose(1,2)
+        score = torch.matmul(Q, K.transpose(3,2))/torch.sqrt(torch.tensor(self.d_attention))
+        real_mask = self.causal_mask[:,:,:x.shape[1],:x.shape[1]]
+        real_mask = torch.where(real_mask>0, 0.0, float('-inf'))
+        score = score + real_mask 
+        score = torch.softmax(score, dim = -1) # batch, h, t, t
+        out = torch.matmul(score, V) # batch, h, t, d/h
+        out = out.transpose(1,2).reshape(x.shape[0], x.shape[1], -1)
+        out = self.W_o(out)
+        return out
 
 
 
@@ -89,7 +107,9 @@ class MLP(nn.Module):
     ) -> Float[Tensor, "batch seq_len d_model"]:
 
         # TODO, complete
-        return torch.empty(1)
+        x = self.gelu(self.fc1(x))
+        x = self.fc2(x)
+        return x
         
 
 class DecoderBlock(nn.Module):
@@ -107,7 +127,9 @@ class DecoderBlock(nn.Module):
     ) -> Float[Tensor, "batch seq_len d_model"]:
 
         # TODO complete
-        return torch.empty(1)
+        after_attention = self.attention(self.pre_layer_norm(x)) + x
+        after_mlp = self.mlp(self.post_layer_norm(after_attention)) + after_attention
+        return after_mlp
 
 
 class Transformer(nn.Module):
@@ -149,8 +171,16 @@ class Transformer(nn.Module):
     ) -> Float[Tensor, "batch seq_len vocab_size"]:
 
         # TODO, complete
-        return torch.empty(1)
-
+        embed_tokens = self.embeddings(x)
+        # pe của gpt 2 không hoạt động theo kiểu cosine mà có thể học được, với đầu vào không phải là token id cụ thể mà là index của các từ trong câu từ 0 đến n
+        idx_matrix = torch.arange(0, x.shape[1]).expand(x.shape[0], x.shape[1])
+        pe = self.position_embeddings(idx_matrix)
+        full_embed = embed_tokens + pe
+        for decoder in self.backbone:
+            full_embed = decoder(full_embed)
+        final_embed = self.final_layer_norm(full_embed)  # batch, seq len, d model
+        output = self.lm_head(final_embed)  # batch, seq len, vocab size
+        return output
     @torch.no_grad()
     def generate(
         self,
@@ -159,16 +189,28 @@ class Transformer(nn.Module):
     ) -> Int[Tensor, "batch_size seq_len+num_new_tokens"]:
 
         # TODO, complete
-        return torch.empty(1)
+        for _ in range(num_new_tokens):
+            output = self.forward(x)
+            output = output[:,-1,:]
+            output = output.argmax(dim = 1, keepdim = True)
+            x = torch.concat((x, output), dim = 1)
+        return x
 
 
     def get_loss_on_batch(
         self,
         input_ids: Int[Tensor, "batch_size seq_len"], 
     ) -> Float[Tensor, ""]:
-
+        
         # TODO, complete
-        return torch.empty(1)
+        criterion = nn.CrossEntropyLoss()
+        target_ids = input_ids[:,1:]       # batch, seq_len
+        inputs_ids = input_ids[:,:-1]
+        pred = self.forward(inputs_ids)    # batch, seq_len, vocab_size
+        pred = pred.reshape(-1, pred.shape[2])
+        target_ids = target_ids.reshape(-1)
+        loss = criterion(pred, target_ids)    
+        return loss
 
 
     @classmethod
