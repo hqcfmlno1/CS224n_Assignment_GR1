@@ -2,7 +2,7 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from model_solution import Transformer
+from model_solution import Transformer, MLP
 import random
 import numpy as np
 import torch
@@ -103,3 +103,5 @@ def test_loss_on_batch(test_model):
     ).detach().cpu().numpy()
     
     np.testing.assert_allclose(output, expected_output, atol=1e-5)
+
+

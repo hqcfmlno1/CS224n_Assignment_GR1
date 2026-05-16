@@ -172,7 +172,7 @@ if __name__ == "__main__":
         learning_rate=1e-5,
         gradient_clipping=1,
         model_config = tiny_model_config,
-        batch_size=16,
-        max_steps=100,
+        batch_size=128,
+        max_steps=32,
     )
 
